@@ -10,6 +10,7 @@
     "capabilities": [
         "filesystem:read:uploads",
         "filesystem:write:uploads",
+        "storage:limit:10gb",
         "scheduler"
     ]
 }

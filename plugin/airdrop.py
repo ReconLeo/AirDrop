@@ -270,6 +270,17 @@ class AirDropPlugin(BasePlugin):
         for file in files:
             if not file or file.filename == '':
                 continue
+            # 存储配额预检（v4.9.1 storage:limit，联动 uploads 目录用量）：现有用量 + 新文件 ≤ 限额
+            file.stream.seek(0, os.SEEK_END)
+            f_size = file.stream.tell()
+            file.stream.seek(0)
+            quota = self.check_upload(f_size)
+            if not quota['ok']:
+                reason = quota.get('reason', 'quota_exceeded')
+                remaining = quota.get('remaining_mb')
+                msg = '存储空间不足' + (f'（剩余 {remaining:.1f}MB）' if remaining is not None else '')
+                self.logger.warning(f"上传被拒（存储配额 {reason}）: {file.filename}")
+                return {'status': 'error', 'msg': msg}, 413
             oversize = self.check_upload_limit(file)
             if oversize:
                 self.logger.warning(f"上传被拒（统一预检超限）: {file.filename}")
