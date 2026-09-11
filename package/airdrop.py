@@ -43,7 +43,7 @@ class AirDropPlugin(BasePlugin):
     name = "airdrop"
     title = "AirDrop 局域网文件共享"
     author = "AirDrop"
-    version = "1.2.0"
+    version = "1.3.0"
     category = "文件工具"
     description = ("局域网文件共享：上传/下载/删除/批量操作/过期清理/局域网地址，"
                    "可配置双模式鉴权。数据目录经配置指向原 uploads。")
