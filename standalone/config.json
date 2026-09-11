@@ -1,0 +1,15 @@
+{
+    "log": {
+        "enabled": true,
+        "max_file_size_mb": 10,
+        "level": "INFO"
+    },
+    "server": {
+        "max_content_length_gb": 1,
+        "upload_folder": "uploads",
+        "expire_seconds": 86400,
+        "port": 9000,
+        "JSON_AS_ASCII": false,
+        "debuggable": true
+    }
+}

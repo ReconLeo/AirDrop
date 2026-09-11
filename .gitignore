@@ -1,0 +1,32 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# ---------- 运行时数据（首次启动自动生成，无需提交） ----------
+# 独立应用
+standalone/uploads/          # 用户上传的文件
+uploads/
+logs/
+output/
+backup/
+temp/
+
+# 灵犀会话工作区残留
+.lingxi/
+.rundata/
+.test/
+
+# 遗留本地归档（README.docx 源文档 / 框架签名验证报告，不入库）
+docs/_legacy/
+
+# ---------- 操作系统 / 编辑器 ----------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+workspace/

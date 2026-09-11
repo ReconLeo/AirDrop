@@ -1,0 +1,6 @@
+{
+    "upload_folder": "H:/Coding/Projects/AirDrop/uploads",
+    "expire_seconds": 86400,
+    "max_gb": 1,
+    "auth_required": false
+}

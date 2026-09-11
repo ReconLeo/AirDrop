@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>局域网快传 - Simple AirDrop</title>
+	<link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAU/AAAFPwETZGSsAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAiRJREFUOI2Vk81LVFEYxn/vnatzZxwdTcu51gRBauVHjBIUBn1IGJqRmC1aBbVrEbWsIAuK2vQf5C5oXRNFyxYG0co+RGxRao4EzbWuzoz3zpzTQtEcR6Fn+fKc33ne9z1HGNKBeNP4sGjpBWxEs6W0AKQ08nJ6svmuGW+aGBYtt4sMAAwmorwZd3FzqhhjC7pjd+MX0xCl+0pd1NJgce1kLX5hq0RGjwFSX1yOWAb3z9ajNBxvjNDfXrVZOzGjuCYCjwdtEvEQWU/xLe1xs2c7zfXB0hmKC7dO7+DU/koAMp5m2vEJlxs8HIgRLt9gXw8YTES5eKgaY2WOWV+xuKRwsgU64iEeDcQ2BxywLW5011ERXGNmvOUBphcLAPS1VnG9u6404OqxWiLB9RGz/vL60pllQMCAy13bONNWueoxVwHPflAbCXCuPcrBXRYtDRb5lRW6WYWTKTD3x2d2Pk+rbZH86AIgnQ++pi4dqY5p4NdCHrWydhEIlRlkPEWVZeAVNDl//Zt4PubOmZGgIVe6arDKNk54K+V8zdvJjBjTjqdmHP+/DgPMOB4zjp8384rUyDvHtkyDE80VHN4TpiwgfE97vP68QEPU5OjeCmrCAdwlxatPLrO/fdycwi+oORPRyafv5zsAnoymudAZJREPMTKaZvKnB0DbTovziSgfpjK8GHPXYghJYUgH4o0Td0ToRWsb+ec7lpIWjSaFkJwq33fvL035x+l6kO7TAAAAAElFTkSuQmCC">
+    <script src="/static/js/plugin_common.js"></script>
+    <script src="/plugin-static/airdrop/qrcode.min.js"></script>
+	<style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        body {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+            background-color: #f5f7fa;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .header h1 {
+            color: #2c3e50;
+            margin-bottom: 0.5rem;
+        }
+        .upload-area {
+            border: 3px dashed #3498db;
+            border-radius: 12px;
+            padding: 3rem;
+            text-align: center;
+            background-color: white;
+            margin-bottom: 2rem;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .upload-area:hover {
+            border-color: #2980b9;
+            background-color: #f8f9fa;
+        }
+        .upload-area.dragover {
+            border-color: #27ae60;
+            background-color: #e8f5e9;
+        }
+        .upload-btn {
+            background-color: #3498db;
+            color: white;
+            padding: 0.8rem 2rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-top: 1rem;
+            transition: background-color 0.3s;
+        }
+        .upload-btn:hover {
+            background-color: #2980b9;
+        }
+        .upload-btn:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        #file-input {
+            display: none;
+        }
+        .progress-container {
+            margin: 1rem 0;
+            display: none;
+        }
+        .progress-bar {
+            width: 0%;
+            height: 12px;
+            background-color: #27ae60;
+            border-radius: 6px;
+            transition: width 0.3s ease;
+        }
+        .progress-text {
+            margin-top: 0.5rem;
+            color: #7f8c8d;
+            text-align: center;
+        }
+        .file-list {
+            background-color: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+        }
+        .file-list h2 {
+            color: #2c3e50;
+            margin-bottom: 1rem;
+            font-size: 1.3rem;
+        }
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            border-bottom: 1px solid #ecf0f1;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .file-item:hover {
+            background-color: #f8f9fa;
+        }
+        .file-item:last-child {
+            border-bottom: none;
+        }
+        .file-info {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 1rem;
+            flex: 1;
+        }
+        .file-size {
+            color: #7f8c8d;
+            font-size: 0.9rem;
+        }
+        .file-remain {
+            color: #e67e22;
+            font-size: 0.85rem;
+        }
+        .file-actions {
+            display: flex;
+            gap: 0.8rem;
+        }
+        .download-btn {
+            background-color: #27ae60;
+            color: white;
+            padding: 0.5rem 1.2rem;
+            border-radius: 6px;
+            text-decoration: none;
+            transition: background-color 0.3s;
+            border: none;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .download-btn:hover {
+            background-color: #229954;
+        }
+        .delete-btn {
+            background-color: #e74c3c;
+            color: white;
+            padding: 0.5rem 1.2rem;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            font-size: 0.9rem;
+        }
+        .delete-btn:hover {
+            background-color: #c0392b;
+        }
+		.batch-actions {
+			display: flex;
+			gap: 0.8rem;
+			margin-bottom: 1rem;
+			flex-wrap: wrap;
+		}
+		.batch-btn {
+			padding: 0.5rem 1rem;
+			border: none;
+			border-radius: 6px;
+			cursor: pointer;
+			font-size: 0.9rem;
+			transition: background-color 0.3s;
+		}
+		.select-all-btn {
+			background-color: #3498db;
+			color: white;
+		}
+		.select-all-btn:hover {
+			background-color: #2980b9;
+		}
+		.invert-select-btn {
+			background-color: #9b59b6;
+			color: white;
+		}
+		.invert-select-btn:hover {
+			background-color: #8e44ad;
+		}
+		.batch-download-btn {
+			background-color: #e67e22;
+			color: white;
+		}
+		.batch-download-btn:hover {
+			background-color: #d35400;
+		}
+		.batch-download-btn:disabled {
+			background-color: #bdc3c7;
+			cursor: not-allowed;
+		}
+		.range-select-btn {
+			background-color: #f39c12;
+			color: white;
+		}
+		.range-select-btn.active {
+			background-color: #e67e22;
+			box-shadow: 0 0 0 2px #f39c1280;
+		}
+		.batch-delete-btn {
+			background-color: #e74c3c;
+			color: white;
+		}
+		.batch-delete-btn:hover {
+			background-color: #c0392b;
+		}
+		.batch-delete-btn:disabled {
+			background-color: #bdc3c7;
+			cursor: not-allowed;
+		}
+		/* 移动端适配：加大点击区域 */
+		@media (max-width: 768px) {
+			.batch-btn {
+				padding: 0.7rem 1rem;
+				font-size: 1rem;
+			}
+			.file-checkbox {
+				width: 22px;
+				height: 22px;
+			}
+		}
+		.file-checkbox {
+			width: 18px;
+			height: 18px;
+			cursor: pointer;
+		}
+        .tip {
+            text-align: center;
+            margin-top: 2rem;
+            color: #7f8c8d;
+            font-size: 0.9rem;
+        }
+		.refresh-actions {
+			display: flex;
+			align-items: center;
+			gap: 0.8rem;
+			margin-left: auto;
+			flex-wrap: wrap;
+		}
+		.refresh-btn {
+			background-color: #1abc9c;
+			color: white;
+			padding: 0.5rem 0.8rem;
+			border: none;
+			border-radius: 6px;
+			cursor: pointer;
+			font-size: 0.9rem;
+		}
+		.refresh-btn:hover {
+			background-color: #16a085;
+		}
+		.refresh-btn.loading {
+			background-color: #95a5a6;
+			pointer-events: none;
+		}
+		.auto-refresh-setting {
+			display: flex;
+			align-items: center;
+			gap: 0.5rem;
+			font-size: 0.9rem;
+			color: #7f8c8d;
+		}
+		.auto-refresh-setting select {
+			padding: 0.4rem;
+			border: 1px solid #ddd;
+			border-radius: 6px;
+			font-size: 0.9rem;
+		}
+		.new-file-tip {
+			position: fixed;
+			top: 20px;
+			right: 20px;
+			background-color: #27ae60;
+			color: white;
+			padding: 0.8rem 1.2rem;
+			border-radius: 8px;
+			box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+			z-index: 999;
+			animation: slideIn 0.3s ease;
+			display: none;
+		}
+		.address-list {
+			margin-top: 8px;
+			display: flex;
+			flex-direction: column;
+			gap: 4px;
+		}
+		.address-link {
+			color: #3498db;
+			text-decoration: none;
+			font-family: monospace;
+			font-size: 1rem;
+			padding: 4px 8px;
+			background: #f0f8ff;
+			border-radius: 4px;
+			display: inline-block;
+			width: fit-content;
+		}
+		.address-link:hover {
+			background: #d0e8ff;
+			text-decoration: underline;
+		}
+		.qrcode-container {
+			margin-top: 16px;
+			padding: 16px;
+			background: #f8f9fa;
+			border-radius: 8px;
+			text-align: center;
+		}
+		
+		.qrcode-container h4 {
+			margin: 0 0 12px 0;
+			color: #2c3e50;
+			font-size: 1rem;
+		}
+		
+		.qrcode-wrapper {
+			position: relative;
+			display: inline-block;
+			min-height: 180px;
+			min-width: 180px;
+		}
+		
+		.qrcode-wrapper canvas {
+			display: none;
+			max-width: 100%;
+			border-radius: 4px;
+		}
+		
+		.qrcode-empty {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			width: 180px;
+			height: 180px;
+			background: #e9ecef;
+			border-radius: 4px;
+			color: #95a5a6;
+			font-size: 0.9rem;
+		}
+		
+		.qrcode-address {
+			margin: 8px 0 0 0;
+			font-family: monospace;
+			font-size: 0.95rem;
+			color: #3498db;
+			word-break: break-all;
+		}
+		
+		.qrcode-nav {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			gap: 12px;
+			margin-top: 10px;
+		}
+		
+		.qrcode-nav-btn {
+			padding: 4px 12px;
+			border: 1px solid #bdc3c7;
+			background: white;
+			border-radius: 4px;
+			cursor: pointer;
+			font-size: 0.85rem;
+			color: #2c3e50;
+		}
+		
+		.qrcode-nav-btn:disabled {
+			opacity: 0.4;
+			cursor: not-allowed;
+		}
+		
+		.qrcode-nav-btn:hover:not(:disabled) {
+			background: #ecf0f1;
+		}
+		
+		.qrcode-nav span {
+			font-size: 0.85rem;
+			color: #7f8c8d;
+			min-width: 50px;
+			text-align: center;
+		}
+		/* 悬浮圆按钮 */
+		.floating-btn {
+			position: fixed;
+			bottom: 30px;
+			right: 30px;
+			width: 56px;
+			height: 56px;
+			border-radius: 50%;
+			background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+			color: #fff;
+			border: none;
+			box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+			cursor: pointer;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			font-size: 24px;
+			z-index: 9999;
+			transition: all 0.3s ease;
+		}
+		
+		.floating-btn:hover {
+			transform: scale(1.1);
+			box-shadow: 0 6px 28px rgba(102, 126, 234, 0.6);
+		}
+		
+		.floating-btn:active {
+			transform: scale(0.95);
+		}
+		
+		/* 自定义 Alert 遮罩层 */
+		.custom-alert-overlay {
+			display: none;
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			background: rgba(0, 0, 0, 0.45);
+			z-index: 10000;
+			justify-content: center;
+			align-items: center;
+			animation: fadeIn 0.2s ease;
+		}
+		
+		.custom-alert-overlay.show {
+			display: flex;
+		}
+		
+		/* 自定义 Alert 弹窗 */
+		.custom-alert-box {
+			background: #fff;
+			border-radius: 16px;
+			padding: 2rem 2.5rem;
+			min-width: 340px;
+			max-width: 440px;
+			box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+			text-align: center;
+			animation: slideUp 0.25s ease;
+		}
+		
+		.custom-alert-box .alert-icon {
+			font-size: 48px;
+			margin-bottom: 12px;
+		}
+		
+		.custom-alert-box .alert-icon.success {
+			color: #22c55e;
+		}
+		
+		.custom-alert-box .alert-icon.error {
+			color: #ef4444;
+		}
+		
+		.custom-alert-box .alert-icon.info {
+			color: #3b82f6;
+		}
+		
+		.custom-alert-box .alert-title {
+			font-size: 18px;
+			font-weight: 600;
+			color: #1e293b;
+			margin-bottom: 8px;
+		}
+		
+		.custom-alert-box .alert-message {
+			font-size: 14px;
+			color: #64748b;
+			line-height: 1.6;
+			margin-bottom: 20px;
+			word-break: break-all;
+		}
+		
+		.custom-alert-box .alert-btn {
+			padding: 10px 32px;
+			border: none;
+			border-radius: 8px;
+			font-size: 14px;
+			font-weight: 500;
+			cursor: pointer;
+			transition: all 0.2s;
+			background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+			color: #fff;
+		}
+		
+		.custom-alert-box .alert-btn:hover {
+			opacity: 0.9;
+			transform: translateY(-1px);
+		}
+		
+		/* 动画 */
+		@keyframes fadeIn {
+			from { opacity: 0; }
+			to { opacity: 1; }
+		}
+		
+		@keyframes slideUp {
+			from { opacity: 0; transform: translateY(30px) scale(0.95); }
+			to { opacity: 1; transform: translateY(0) scale(1); }
+		}
+		@keyframes slideIn {
+			from { transform: translateX(100%); opacity: 0; }
+			to { transform: translateX(0); opacity: 1; }
+		}
+		@media (max-width:768px) {
+			.refresh-actions {
+				width: 100%;
+				justify-content: flex-end;
+				margin-top: 0.5rem;
+			}
+		}
+    </style>
+</head>
+<body>
+    <div class="header">
+		<h1>📤 局域网快传</h1>
+		<p>同一WiFi下的设备可通过此工具快速传输文件 | 文件默认保留{{ expire_hours }}小时</p>
+	</div>
+
+    <div class="upload-area" id="uploadArea">
+        <h3>拖拽文件到此处或点击选择文件</h3>
+        <p>支持多文件上传，单个文件最大{{ max_gb }}GB</p>
+        <input type="file" id="file-input" multiple>
+        <button class="upload-btn" id="selectBtn">选择文件</button>
+        <button class="upload-btn" id="uploadBtn" disabled>开始上传</button>
+    </div>
+
+    <div class="progress-container" id="progressContainer">
+        <div class="progress-bar" id="progressBar"></div>
+        <div class="progress-text" id="progressText">0%</div>
+    </div>
+
+    <div class="file-list">
+		<h2>已上传文件</h2>
+		{% if files %}
+		<div class="batch-actions">
+			<button class="batch-btn select-all-btn" onclick="selectAll()">全选</button>
+			<button class="batch-btn invert-select-btn" onclick="invertSelect()">反选</button>
+			<button class="batch-btn range-select-btn" id="rangeSelectBtn" onclick="toggleRangeSelect()">范围选</button>
+			<button class="batch-btn batch-download-btn" id="batchDownloadBtn" disabled onclick="batchDownload()">批量下载</button>
+			<button class="batch-btn batch-delete-btn" id="batchDeleteBtn" disabled onclick="batchDelete()">批量删除</button>
+			<span id="selectedCount" style="line-height: 32px; color: #7f8c8d; font-size: 0.9rem;">已选择 0 个文件</span>
+			<!-- 新增刷新控制区域 -->
+			<div class="refresh-actions">
+				<button class="refresh-btn" id="refreshBtn" onclick="refreshFileList()">🔄 刷新</button>
+				<div class="auto-refresh-setting">
+					<span>自动刷新:</span>
+					<select id="refreshInterval" onchange="changeRefreshInterval()">
+						<option value="0">关闭</option>
+						<option value="10">10秒</option>
+						<option value="30" selected>30秒</option>
+						<option value="60">1分钟</option>
+						<option value="300">5分钟</option>
+					</select>
+				</div>
+			</div>
+		</div>
+		<!-- 新文件提示 -->
+		<div class="new-file-tip" id="newFileTip">发现 <span id="newFileCount">0</span> 个新文件</div>
+		{% for file in files %}
+		<div class="file-item" data-filename="{{ file.name }}" data-index="{{ loop.index0 }}">
+			<input type="checkbox" class="file-checkbox" value="{{ file.name }}" onchange="updateSelectedCount()">
+			<div class="file-info">
+				<span>{{ file.name }}</span>
+				<span class="file-size">{{ file.size }} MB</span>
+				<span class="file-remain">剩余{{ file.remain_hour }}小时过期</span>
+			</div>
+			<div class="file-actions">
+				<a href="/api/airdrop/download/{{ file.name }}" class="download-btn" target="_blank">下载</a>
+				<button class="delete-btn" onclick="deleteFile('{{ file.name }}')">删除</button>
+			</div>
+		</div>
+		{% endfor %}
+		{% else %}
+		<p style="color: #7f8c8d; text-align: center; padding: 2rem;">暂无上传的文件</p>
+		{% endif %}
+	</div>
+
+    <div class="tip">
+		<p>其他设备访问以下地址即可使用传输功能，请确保所有设备在同一局域网下</p>
+		<div id="addressList" class="address-list"></div>
+		<div id="qrcodeContainer" class="qrcode-container" style="display: none;">
+			<h4>扫码访问</h4>
+			<div class="qrcode-wrapper">
+				<canvas id="qrcodeCanvas"></canvas>
+				<div class="qrcode-empty" id="qrcodeEmptyTip">
+					<span>暂无地址</span>
+				</div>
+			</div>
+			<p class="qrcode-address" id="qrcodeAddressLabel"></p>
+			<div class="qrcode-nav">
+				<button class="qrcode-nav-btn" id="qrcodePrevBtn" disabled>◀ 上一个</button>
+				<span id="qrcodePageInfo">0 / 0</span>
+				<button class="qrcode-nav-btn" id="qrcodeNextBtn" disabled>下一个 ▶</button>
+			</div>
+		</div>
+	</div>
+	
+	<!-- 悬浮按钮 -->
+	<button class="floating-btn" id="openFolderBtn" title="打开上传文件夹">
+		📂
+	</button>
+	
+	<!-- 自定义 Alert 弹窗 -->
+	<div class="custom-alert-overlay" id="customAlertOverlay">
+		<div class="custom-alert-box">
+			<div class="alert-icon" id="alertIcon">✅</div>
+			<div class="alert-title" id="alertTitle">提示</div>
+			<div class="alert-message" id="alertMessage">操作已完成</div>
+			<button class="alert-btn" id="alertBtn">知道了</button>
+		</div>
+	</div>
+	
+
+    <script>
+        // 框架鉴权模型：由 /static/js/plugin_common.js 全局 XHR/fetch 拦截统一注入 X-CSRF-Token
+        // 并统一处理 401/403（跳登录/403 页），此处不再手动注入，避免与拦截器双重设置同名头。
+        const fileInput = document.getElementById('file-input');
+        const selectBtn = document.getElementById('selectBtn');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const uploadArea = document.getElementById('uploadArea');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        
+        let selectedFiles = [];
+		let lastCheckedIndex = null;
+		let isRangeSelectMode = false;
+		let rangeStart = null;
+		// 自动识别移动端
+		const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+        // 删除文件函数
+        function deleteFile(filename) {
+            if(confirm(`确定要删除文件「${filename}」吗？`)) {
+                fetch(`/api/airdrop/delete/${encodeURIComponent(filename)}`, {
+                    method: 'POST'
+                }).then(res => res.json())
+                .then(data => {
+                    alert(data.msg);
+                    if(data.status === 'success') {
+                        window.location.reload();
+                    }
+                })
+                .catch(err => {
+                    alert('删除失败，请重试');
+                })
+            }
+        }
+
+        // 双击文件项也可以删除
+        document.querySelectorAll('.file-item').forEach(item => {
+            item.addEventListener('dblclick', () => {
+                const filename = item.dataset.filename;
+                deleteFile(filename);
+            })
+        })
+
+        // 选择文件按钮
+        selectBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        // 文件选择后
+        fileInput.addEventListener('change', (e) => {
+            selectedFiles = Array.from(e.target.files);
+            if (selectedFiles.length > 0) {
+                uploadBtn.disabled = false;
+                uploadArea.querySelector('h3').textContent = `已选择${selectedFiles.length}个文件`;
+            }
+        });
+
+        // 拖拽功能
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            selectedFiles = Array.from(e.dataTransfer.files);
+            if (selectedFiles.length > 0) {
+                uploadBtn.disabled = false;
+                uploadArea.querySelector('h3').textContent = `已选择${selectedFiles.length}个文件`;
+            }
+        });
+
+        // 上传功能
+        uploadBtn.addEventListener('click', () => {
+            if (selectedFiles.length === 0) return;
+
+            const formData = new FormData();
+            selectedFiles.forEach(file => {
+                formData.append('files', file);
+            });
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/airdrop/upload', true);
+
+            // 进度监听
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    progressBar.style.width = `${percent}%`;
+                    progressText.textContent = `${percent}%`;
+                }
+            });
+
+            // 上传完成
+            xhr.onload = () => {
+                if (xhr.status === 200) {
+                    progressText.textContent = '上传成功，页面即将刷新';
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    progressText.textContent = '上传失败，请重试';
+                }
+            };
+
+            xhr.onerror = () => {
+                progressText.textContent = '上传出错，请检查网络';
+            };
+
+            progressContainer.style.display = 'block';
+            xhr.send(formData);
+        });
+		
+		// 切换范围选择模式（移动端无Shift键专用）
+		function toggleRangeSelect() {
+			isRangeSelectMode = !isRangeSelectMode;
+			const btn = document.getElementById('rangeSelectBtn');
+			if (isRangeSelectMode) {
+				btn.classList.add('active');
+				btn.textContent = '取消范围选';
+				rangeStart = null;
+				alert('范围选择模式已开启：先后点击两个文件，将自动选中中间所有文件');
+			} else {
+				btn.classList.remove('active');
+				btn.textContent = '范围选';
+				rangeStart = null;
+			}
+		}
+		
+		// 全选
+		function selectAll() {
+			const checkboxes = document.querySelectorAll('.file-checkbox');
+			checkboxes.forEach(box => box.checked = true);
+			updateSelectedCount();
+		}
+		
+		// 反选
+		function invertSelect() {
+			const checkboxes = document.querySelectorAll('.file-checkbox');
+			checkboxes.forEach(box => box.checked = !box.checked);
+			updateSelectedCount();
+		}
+		
+		// 更新选中计数
+		function updateSelectedCount() {
+			const checkboxes = document.querySelectorAll('.file-checkbox');
+			const selectedCount = Array.from(checkboxes).filter(box => box.checked).length;
+			document.getElementById('selectedCount').textContent = `已选择 ${selectedCount} 个文件`;
+			document.getElementById('batchDownloadBtn').disabled = selectedCount === 0;
+			document.getElementById('batchDeleteBtn').disabled = selectedCount === 0;
+		}
+		
+		// 多选逻辑（兼容PC+移动端）
+		document.querySelectorAll('.file-checkbox').forEach((checkbox, index) => {
+			const fileItem = checkbox.closest('.file-item');
+			
+			// PC端Shift区间选择保留
+			checkbox.addEventListener('click', (e) => {
+				if (isRangeSelectMode) {
+					e.preventDefault();
+					if (rangeStart === null) {
+						rangeStart = index;
+						checkbox.checked = true;
+						alert('已选起点，现在点击终点文件');
+					} else {
+						const checkboxes = document.querySelectorAll('.file-checkbox');
+						const start = Math.min(rangeStart, index);
+						const end = Math.max(rangeStart, index);
+						for (let i = start; i <= end; i++) {
+							checkboxes[i].checked = true;
+						}
+						updateSelectedCount();
+						// 选择完成自动退出范围模式
+						isRangeSelectMode = false;
+						document.getElementById('rangeSelectBtn').classList.remove('active');
+						document.getElementById('rangeSelectBtn').textContent = '范围选';
+						rangeStart = null;
+					}
+					return;
+				}
+				// PC端Shift选择逻辑
+				if (!isMobile && e.shiftKey && lastCheckedIndex !== null) {
+					const checkboxes = document.querySelectorAll('.file-checkbox');
+					const start = Math.min(lastCheckedIndex, index);
+					const end = Math.max(lastCheckedIndex, index);
+					for (let i = start; i <= end; i++) {
+						checkboxes[i].checked = checkbox.checked;
+					}
+				}
+				lastCheckedIndex = index;
+				updateSelectedCount();
+			})
+		
+			// 移动端长按触发选择
+			if (isMobile) {
+				let longPressTimer;
+				fileItem.addEventListener('touchstart', () => {
+					longPressTimer = setTimeout(() => {
+						checkbox.checked = !checkbox.checked;
+						updateSelectedCount();
+						// 震动反馈（如果设备支持）
+						if (navigator.vibrate) navigator.vibrate(50);
+					}, 500);
+				})
+				fileItem.addEventListener('touchend', () => {
+					clearTimeout(longPressTimer);
+				})
+				fileItem.addEventListener('touchmove', () => {
+					clearTimeout(longPressTimer);
+				})
+			}
+		})
+		
+		// 批量删除
+		async function batchDelete() {
+			const checkboxes = document.querySelectorAll('.file-checkbox:checked');
+			const filenames = Array.from(checkboxes).map(box => box.value);
+			if (filenames.length === 0) return;
+		
+			if(!confirm(`确定要删除选中的${filenames.length}个文件吗？此操作不可恢复！`)) return;
+		
+			const btn = document.getElementById('batchDeleteBtn');
+			btn.disabled = true;
+			btn.textContent = '删除中...';
+		
+			try {
+				const res = await fetch('/api/airdrop/batch-delete', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({ filenames })
+				});
+				const data = await res.json();
+				alert(data.msg);
+				if (data.status === 'success') {
+					window.location.reload();
+				}
+			} catch (err) {
+				alert('批量删除失败，请重试');
+			} finally {
+				btn.disabled = false;
+				btn.textContent = '批量删除';
+			}
+		}
+		
+		// 批量下载
+		async function batchDownload() {
+			const checkboxes = document.querySelectorAll('.file-checkbox:checked');
+			const filenames = Array.from(checkboxes).map(box => box.value);
+			if (filenames.length === 0) return;
+		
+			const btn = document.getElementById('batchDownloadBtn');
+			btn.disabled = true;
+			btn.textContent = '打包中...';
+		
+			try {
+				const res = await fetch('/api/airdrop/batch-download', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({ filenames })
+				});
+		
+				if (!res.ok) throw new Error('下载失败');
+		
+				const blob = await res.blob();
+				const url = window.URL.createObjectURL(blob);
+				const a = document.createElement('a');
+				a.href = url;
+				a.download = res.headers.get('Content-Disposition')?.split('filename=')[1] || `批量下载_${Date.now()}.zip`;
+				document.body.appendChild(a);
+				a.click();
+				window.URL.revokeObjectURL(url);
+				document.body.removeChild(a);
+			} catch (err) {
+				alert('批量下载失败，请重试');
+			} finally {
+				btn.disabled = false;
+				btn.textContent = '批量下载';
+			}
+		}
+		
+		let refreshTimer = null;
+		let currentFileNames = new Set(Array.from(document.querySelectorAll('.file-checkbox')).map(box => box.value));
+		
+		// 切换自动刷新间隔
+		function changeRefreshInterval() {
+			const interval = parseInt(document.getElementById('refreshInterval').value);
+			if (refreshTimer) {
+				clearInterval(refreshTimer);
+				refreshTimer = null;
+			}
+			if (interval > 0) {
+				refreshTimer = setInterval(refreshFileList, interval * 1000);
+			}
+		}
+		
+		// 刷新文件列表
+		async function refreshFileList() {
+			const refreshBtn = document.getElementById('refreshBtn');
+			refreshBtn.classList.add('loading');
+			refreshBtn.textContent = '刷新中...';
+		
+			try {
+				// 1. 保存当前用户选中的文件
+				const selectedFiles = new Set(Array.from(document.querySelectorAll('.file-checkbox:checked')).map(box => box.value));
+				// 2. 获取最新文件列表
+				const res = await fetch('/api/airdrop/files');
+				const newFiles = await res.json();
+				// 3. 计算新增文件数量
+				const newFileCount = newFiles.filter(f => !currentFileNames.has(f.name)).length;
+				currentFileNames = new Set(newFiles.map(f => f.name));
+				// 4. 渲染新的文件列表
+				const fileListContainer = document.querySelector('.file-list');
+				let html = `
+					<h2>已上传文件</h2>
+					<div class="batch-actions">
+						<button class="batch-btn select-all-btn" onclick="selectAll()">全选</button>
+						<button class="batch-btn invert-select-btn" onclick="invertSelect()">反选</button>
+						<button class="batch-btn range-select-btn" id="rangeSelectBtn" onclick="toggleRangeSelect()">范围选</button>
+						<button class="batch-btn batch-download-btn" id="batchDownloadBtn" ${newFiles.length === 0 ? 'disabled' : ''} onclick="batchDownload()">批量下载</button>
+						<button class="batch-btn batch-delete-btn" id="batchDeleteBtn" ${newFiles.length === 0 ? 'disabled' : ''} onclick="batchDelete()">批量删除</button>
+						<span id="selectedCount" style="line-height: 32px; color: #7f8c8d; font-size: 0.9rem;">已选择 0 个文件</span>
+						<div class="refresh-actions">
+							<button class="refresh-btn" id="refreshBtn" onclick="refreshFileList()">🔄 刷新</button>
+							<div class="auto-refresh-setting">
+								<span>自动刷新:</span>
+								<select id="refreshInterval" onchange="changeRefreshInterval()">
+									<option value="0">关闭</option>
+									<option value="10">10秒</option>
+									<option value="30" ${document.getElementById('refreshInterval').value === '30' ? 'selected' : ''}>30秒</option>
+									<option value="60">1分钟</option>
+									<option value="300">5分钟</option>
+								</select>
+							</div>
+						</div>
+					</div>
+				`;
+				if (newFiles.length === 0) {
+					html += '<p style="color: #7f8c8d; text-align: center; padding: 2rem;">暂无上传的文件</p>';
+				} else {
+					newFiles.forEach((file, index) => {
+						const checked = selectedFiles.has(file.name) ? 'checked' : '';
+						html += `
+						<div class="file-item" data-filename="${file.name}" data-index="${index}">
+							<input type="checkbox" class="file-checkbox" value="${file.name}" ${checked} onchange="updateSelectedCount()">
+							<div class="file-info">
+								<span>${file.name}</span>
+								<span class="file-size">${file.size} MB</span>
+								<span class="file-remain">剩余${file.remain_hour}小时过期</span>
+							</div>
+							<div class="file-actions">
+								<a href="/api/airdrop/download/${file.name}" class="download-btn" target="_blank">下载</a>
+								<button class="delete-btn" onclick="deleteFile('${file.name}')">删除</button>
+							</div>
+						</div>
+						`;
+					});
+				}
+				fileListContainer.innerHTML = html;
+				// 5. 重新绑定事件
+				bindFileEvents();
+				updateSelectedCount();
+				// 6. 新文件提示
+				if (newFileCount > 0) {
+					const tip = document.getElementById('newFileTip');
+					document.getElementById('newFileCount').textContent = newFileCount;
+					tip.style.display = 'block';
+					setTimeout(() => {
+						tip.style.display = 'none';
+					}, 3000);
+				}
+			} catch (err) {
+				console.error('刷新失败', err);
+			} finally {
+				refreshBtn.classList.remove('loading');
+				refreshBtn.textContent = '🔄 刷新';
+			}
+		}
+		
+		// 重新绑定文件相关事件
+		function bindFileEvents() {
+			lastCheckedIndex = null;
+			rangeStart = null;
+			document.querySelectorAll('.file-checkbox').forEach((checkbox, index) => {
+				const fileItem = checkbox.closest('.file-item');
+				checkbox.addEventListener('click', (e) => {
+					if (isRangeSelectMode) {
+						e.preventDefault();
+						if (rangeStart === null) {
+							rangeStart = index;
+							checkbox.checked = true;
+							alert('已选起点，现在点击终点文件');
+						} else {
+							const checkboxes = document.querySelectorAll('.file-checkbox');
+							const start = Math.min(rangeStart, index);
+							const end = Math.max(rangeStart, index);
+							for (let i = start; i <= end; i++) {
+								checkboxes[i].checked = true;
+							}
+							updateSelectedCount();
+							isRangeSelectMode = false;
+							document.getElementById('rangeSelectBtn').classList.remove('active');
+							document.getElementById('rangeSelectBtn').textContent = '范围选';
+							rangeStart = null;
+						}
+						return;
+					}
+					if (!isMobile && e.shiftKey && lastCheckedIndex !== null) {
+						const checkboxes = document.querySelectorAll('.file-checkbox');
+						const start = Math.min(lastCheckedIndex, index);
+						const end = Math.max(lastCheckedIndex, index);
+						for (let i = start; i <= end; i++) {
+							checkboxes[i].checked = checkbox.checked;
+						}
+					}
+					lastCheckedIndex = index;
+					updateSelectedCount();
+				})
+				if (isMobile) {
+					let longPressTimer;
+					fileItem.addEventListener('touchstart', () => {
+						longPressTimer = setTimeout(() => {
+							checkbox.checked = !checkbox.checked;
+							updateSelectedCount();
+							if (navigator.vibrate) navigator.vibrate(50);
+						}, 500);
+					})
+					fileItem.addEventListener('touchend', () => clearTimeout(longPressTimer));
+					fileItem.addEventListener('touchmove', () => clearTimeout(longPressTimer));
+				}
+				// 双击删除事件
+				fileItem.addEventListener('dblclick', () => {
+					const filename = fileItem.dataset.filename;
+					deleteFile(filename);
+				})
+			})
+		}
+		
+		// 页面加载完成后默认启动30秒自动刷新
+		window.addEventListener('load', () => {
+			changeRefreshInterval();
+			bindFileEvents();
+		});
+    </script>
+<script>
+// 页面加载时自动检测可用地址
+document.addEventListener('DOMContentLoaded', function() {
+    const allAddresses = {{ addresses | tojson }};
+    const addressList = document.getElementById('addressList');
+    const qrcodeContainer = document.getElementById('qrcodeContainer');
+    const qrcodeCanvas = document.getElementById('qrcodeCanvas');
+    const qrcodeEmptyTip = document.getElementById('qrcodeEmptyTip');
+    const qrcodeAddressLabel = document.getElementById('qrcodeAddressLabel');
+    const qrcodePrevBtn = document.getElementById('qrcodePrevBtn');
+    const qrcodeNextBtn = document.getElementById('qrcodeNextBtn');
+    const qrcodePageInfo = document.getElementById('qrcodePageInfo');
+ 
+    let availableAddresses = [];
+    let currentQrIndex = 0;
+ 
+    // 优先选择以10开头的地址
+    const preferred = allAddresses.filter(ip => ip.startsWith('10.'));
+    const candidates = preferred.length > 0 ? preferred : allAddresses;
+ 
+    let found = false;
+    let testIndex = 0;
+ 
+    function tryNextAddress() {
+        if (testIndex >= candidates.length) {
+            // 没有找到可用地址，显示所有地址
+            availableAddresses = allAddresses;
+            displayAddresses(allAddresses);
+            initQRCode();
+            return;
+        }
+ 
+        const ip = candidates[testIndex];
+        const testUrl = `http://${ip}:${location.port}/api/test`;
+ 
+        fetch(testUrl, { method: 'GET', mode: 'no-cors' })
+            .then(() => {
+                if (!found) {
+                    found = true;
+                    availableAddresses = [ip];
+                    displayAddresses([ip]);
+                    initQRCode();
+                }
+            })
+            .catch(() => {
+                testIndex++;
+                tryNextAddress();
+            });
+    }
+ 
+    function displayAddresses(ips) {
+        addressList.innerHTML = '';
+        ips.forEach(ip => {
+            const link = document.createElement('a');
+            link.href = `http://${ip}:${location.port}`;
+            link.target = '_blank';
+            link.className = 'address-link';
+            link.textContent = `http://${ip}:${location.port}`;
+            addressList.appendChild(link);
+        });
+    }
+ 
+    // 二维码生成
+    function initQRCode() {
+        if (availableAddresses.length === 0) return;
+ 
+        qrcodeContainer.style.display = 'block';
+        currentQrIndex = 0;
+        updateQRCode();
+        updateQRNavButtons();
+    }
+ 
+    function updateQRCode() {
+        if (availableAddresses.length === 0) return;
+ 
+        const ip = availableAddresses[currentQrIndex];
+        const url = `http://${ip}:${location.port}`;
+        const size = Math.min(256, Math.max(128, window.innerWidth > 480 ? 256 : 180));
+ 
+        qrcodeAddressLabel.textContent = url;
+ 
+        // 隐藏空提示，显示 canvas
+        qrcodeEmptyTip.style.display = 'none';
+        qrcodeCanvas.style.display = 'block';
+ 
+        // 生成二维码
+        QRCode.toCanvas(qrcodeCanvas, url, {
+            width: size,
+            margin: 2,
+            color: {
+                dark: '#2c3e50',
+                light: '#ffffff'
+            },
+            errorCorrectionLevel: 'M'
+        }).catch(function(e) {
+            console.error('二维码生成失败:', e);
+            qrcodeCanvas.style.display = 'none';
+            qrcodeEmptyTip.style.display = 'block';
+            qrcodeEmptyTip.textContent = '生成失败';
+        });
+ 
+        // 更新页码
+        qrcodePageInfo.textContent = `${currentQrIndex + 1} / ${availableAddresses.length}`;
+    }
+ 
+    function updateQRNavButtons() {
+        qrcodePrevBtn.disabled = currentQrIndex <= 0;
+        qrcodeNextBtn.disabled = currentQrIndex >= availableAddresses.length - 1;
+    }
+ 
+    // 二维码导航
+    qrcodePrevBtn.addEventListener('click', function() {
+        if (currentQrIndex > 0) {
+            currentQrIndex--;
+            updateQRCode();
+            updateQRNavButtons();
+        }
+    });
+ 
+    qrcodeNextBtn.addEventListener('click', function() {
+        if (currentQrIndex < availableAddresses.length - 1) {
+            currentQrIndex++;
+            updateQRCode();
+            updateQRNavButtons();
+        }
+    });
+ 
+    // 开始检测
+    tryNextAddress();
+});
+</script>
+<script>
+// ============================================================
+// 自定义 Alert 函数
+// ============================================================
+function showCustomAlert(type, title, message) {
+    const overlay = document.getElementById('customAlertOverlay');
+    const iconEl = document.getElementById('alertIcon');
+    const titleEl = document.getElementById('alertTitle');
+    const msgEl = document.getElementById('alertMessage');
+ 
+    // 设置图标
+    const icons = {
+        success: '✅',
+        error: '❌',
+        info: 'ℹ️',
+        warning: '⚠️'
+    };
+    iconEl.textContent = icons[type] || 'ℹ️';
+    iconEl.className = 'alert-icon ' + (type || 'info');
+ 
+    titleEl.textContent = title || '提示';
+    msgEl.textContent = message || '';
+ 
+    overlay.classList.add('show');
+}
+ 
+// 关闭弹窗
+document.getElementById('alertBtn').addEventListener('click', function () {
+    document.getElementById('customAlertOverlay').classList.remove('show');
+});
+ 
+// 点击遮罩层也可关闭
+document.getElementById('customAlertOverlay').addEventListener('click', function (e) {
+    if (e.target === this) {
+        this.classList.remove('show');
+    }
+});
+ 
+// ============================================================
+// 一键打开上传文件夹
+// ============================================================
+document.getElementById('openFolderBtn').addEventListener('click', function () {
+    fetch('/api/airdrop/open-upload-folder')
+        .then(res => res.json())
+        .then(data => {
+            if (data.code === 200) {
+                showCustomAlert('success', '打开成功', data.message);
+            } else {
+                showCustomAlert('error', '打开失败', data.message);
+            }
+        })
+        .catch(err => {
+            showCustomAlert('error', '请求失败', '无法连接到服务器: ' + err.message);
+        });
+});
+</script>
+</body>
+</html>

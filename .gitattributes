@@ -1,0 +1,13 @@
+# 统一 LF 行尾（Windows 下 Git 默认 autocrlf 会把 LF 转 CRLF，导致跨平台与表格渲染异常）
+* text=auto eol=lf
+
+# 文本文件显式声明
+*.md text eol=lf
+*.py text eol=lf
+*.html text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.json text eol=lf
+*.txt text eol=lf
+*.ico binary
+*.png binary

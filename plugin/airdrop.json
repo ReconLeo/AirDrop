@@ -1,0 +1,10 @@
+{
+    "name": "airdrop",
+    "version": "1.0.0",
+    "title": "AirDrop 局域网文件共享",
+    "author": "AirDrop",
+    "category": "文件工具",
+    "description": "局域网文件共享：上传/下载/删除/批量操作/过期清理/局域网地址，可配置双模式鉴权。数据目录经配置指向原 uploads。",
+    "permission": "user",
+    "require_framework_version": "4.2.2"  # route 级 max_upload（MB）为 v4.2.2 能力
+}
