@@ -8,7 +8,7 @@ AirDrop 局域网文件共享插件（airdrop）
 - 文件列表：JSON 接口（前端局部刷新）+ 过期文件清理
 - 网络信息：局域网 IP 列表（页面二维码 / 访问地址）
 - 系统辅助：服务端打开上传文件夹（仅管理员）
-- 安全防护：get_safe_filename 路径穿越防护、zip 中文名 UTF-8 兼容、下载头中文名编码
+- 安全防护：sanitize_filename 路径穿越防护、zip 中文名 UTF-8 兼容、下载头中文名编码
 
 配置（plugins/configs/airdrop.json）：
 - upload_folder  : 上传目录绝对路径（默认指向 AirDrop 原 uploads，零迁移风险）
@@ -25,7 +25,6 @@ AirDrop 局域网文件共享插件（airdrop）
 依赖：无（标准库 + Flask）
 """
 import os
-import re
 import time
 import zipfile
 import logging
@@ -44,7 +43,7 @@ class AirDropPlugin(BasePlugin):
     name = "airdrop"
     title = "AirDrop 局域网文件共享"
     author = "AirDrop"
-    version = "1.1.0"
+    version = "1.2.0"
     category = "文件工具"
     description = ("局域网文件共享：上传/下载/删除/批量操作/过期清理/局域网地址，"
                    "可配置双模式鉴权。数据目录经配置指向原 uploads。")
@@ -162,20 +161,6 @@ class AirDropPlugin(BasePlugin):
         ]
 
     # ------------------------------------------------------------------
-    # 安全文件名（路径穿越防护，原样保留）
-    # ------------------------------------------------------------------
-    @staticmethod
-    def get_safe_filename(filename):
-        # 保留中文、字母、数字、常见符号，过滤危险路径字符
-        filename = re.sub(r'[\\/:*?"<>|\n\r\t]', '', filename)
-        # 防止路径穿越攻击，移除上级目录标识
-        filename = filename.replace('..', '').lstrip('.')
-        # 处理空文件名情况
-        if not filename.strip():
-            return f"未命名文件_{int(time.time())}"
-        return filename
-
-    # ------------------------------------------------------------------
     # 局域网地址
     # ------------------------------------------------------------------
     def get_lan_addresses(self):
@@ -259,47 +244,34 @@ class AirDropPlugin(BasePlugin):
     # ------------------------------------------------------------------
     @permission_required("user")
     def upload_files(self):
-        if 'files' not in request.files:
-            self.logger.warning("上传请求中未包含文件")
+        # 同步持久化上传助手（v4.18 save_uploads）：净化 + 重名去重 + 大小/配额双预检 + 落盘一次完成
+        try:
+            results = self.save_uploads('files', dest_dir=self.upload_folder)
+        except ValueError as e:
+            self.logger.warning(f"上传请求无效: {e}")
+            return {'status': 'error', 'msg': str(e)}, 400
+        if not results:
             return {'status': 'error', 'msg': '未选择任何文件'}, 400
 
-        files = request.files.getlist('files')
-        success_count = 0
-        # 统一预检：route 级 max_upload 已提升本请求 MAX_CONTENT_LENGTH；
-        # 这里对每个文件用流 seek/tell 预检（不落盘），超限即拒
-        for file in files:
-            if not file or file.filename == '':
-                continue
-            # 存储配额预检（v4.9.1 storage:limit，联动 uploads 目录用量）：现有用量 + 新文件 ≤ 限额
-            file.stream.seek(0, os.SEEK_END)
-            f_size = file.stream.tell()
-            file.stream.seek(0)
-            quota = self.check_upload(f_size)
-            if not quota['ok']:
-                reason = quota.get('reason', 'quota_exceeded')
-                remaining = quota.get('remaining_mb')
+        rejected = [r for r in results if r['status'] == 'rejected']
+        if rejected:
+            r0 = rejected[0]
+            reason = r0.get('reason')
+            if reason == 'quota_exceeded':
+                remaining = r0.get('remaining_mb')
                 msg = '存储空间不足' + (f'（剩余 {remaining:.1f}MB）' if remaining is not None else '')
-                self.logger.warning(f"上传被拒（存储配额 {reason}）: {file.filename}")
+                self.logger.warning(f"上传被拒（存储配额）: {r0['original_name']}")
                 return {'status': 'error', 'msg': msg}, 413
-            oversize = self.check_upload_limit(file)
-            if oversize:
-                self.logger.warning(f"上传被拒（统一预检超限）: {file.filename}")
+            if reason == 'size_exceeded':
+                self.logger.warning(f"上传被拒（大小超限）: {r0['original_name']}")
                 return {'status': 'error', 'msg': f'文件大小超过限制（{self.max_gb}GB）'}, 413
-            filename = self.get_safe_filename(file.filename)
-            save_path = os.path.join(self.upload_folder, filename)
-            # 重名文件自动加序号
-            counter = 1
-            while os.path.exists(save_path):
-                name, ext = os.path.splitext(filename)
-                new_filename = f"{name}_{counter}{ext}"
-                save_path = os.path.join(self.upload_folder, new_filename)
-                counter += 1
-            file.save(save_path)
-            success_count += 1
-            self.logger.info(f"文件上传成功: {os.path.basename(save_path)}")
+            if reason == 'invalid_type':
+                return {'status': 'error', 'msg': '不支持的文件类型'}, 400
+            return {'status': 'error', 'msg': '文件上传失败'}, 400
 
-        self.logger.info(f"批量上传完成: 成功{success_count}个文件")
-        return {'status': 'success', 'msg': f'成功上传{success_count}个文件'}, 200
+        success = len([r for r in results if r['status'] == 'saved'])
+        self.logger.info(f"批量上传完成: 成功{success}个文件")
+        return {'status': 'success', 'msg': f'成功上传{success}个文件'}, 200
 
     # ------------------------------------------------------------------
     # 下载
@@ -307,7 +279,7 @@ class AirDropPlugin(BasePlugin):
     @permission_required("public")
     def download_file(self, filename):
         # 下载前检查文件是否过期
-        safe_name = self.get_safe_filename(filename)
+        safe_name = self.sanitize_filename(filename)
         file_path = os.path.join(self.upload_folder, safe_name)
         if not os.path.exists(file_path):
             self.logger.warning(f"下载失败，文件不存在: {filename}")
@@ -332,7 +304,7 @@ class AirDropPlugin(BasePlugin):
     # ------------------------------------------------------------------
     @permission_required("admin")
     def delete_file(self, filename):
-        safe_name = self.get_safe_filename(filename)
+        safe_name = self.sanitize_filename(filename)
         file_path = os.path.join(self.upload_folder, safe_name)
         if os.path.exists(file_path) and os.path.isfile(file_path):
             try:
@@ -353,7 +325,7 @@ class AirDropPlugin(BasePlugin):
 
         delete_count = 0
         for filename in filenames:
-            safe_name = self.get_safe_filename(filename)
+            safe_name = self.sanitize_filename(filename)
             file_path = os.path.join(self.upload_folder, safe_name)
             if os.path.exists(file_path) and os.path.isfile(file_path):
                 try:
@@ -381,7 +353,7 @@ class AirDropPlugin(BasePlugin):
         zip_buffer = BytesIO()
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zip_file:
             for filename in filenames:
-                safe_name = self.get_safe_filename(filename)
+                safe_name = self.sanitize_filename(filename)
                 file_path = os.path.join(self.upload_folder, safe_name)
                 if os.path.exists(file_path) and os.path.isfile(file_path):
                     # 修复ZIP包中文文件名乱码：设置UTF-8编码标识
