@@ -29,8 +29,6 @@ import re
 import time
 import zipfile
 import logging
-import socket
-import subprocess
 import platform
 from io import BytesIO
 from typing import List, Dict
@@ -181,59 +179,13 @@ class AirDropPlugin(BasePlugin):
     # 局域网地址
     # ------------------------------------------------------------------
     def get_lan_addresses(self):
-        """获取所有非 localhost 的局域网 IP 地址"""
-        addresses = []
+        """获取所有非 localhost 的局域网 IP（复用框架 core.network，消除 subprocess/socket 高风险）"""
         try:
-            hostname = socket.gethostname()
-            for info in socket.getaddrinfo(hostname, None):
-                ip = info[4][0]
-                if not ip.startswith('127.') and not ip.startswith('::1') and not ip == '0.0.0.0':
-                    if ip not in addresses:
-                        addresses.append(ip)
-
-            try:
-                if os.name == 'nt':  # Windows
-                    import locale
-                    system_encoding = locale.getpreferredencoding()
-                    result = subprocess.run(
-                        ['ipconfig'],
-                        capture_output=True,
-                        text=True,
-                        encoding=system_encoding
-                    )
-                    for line in result.stdout.split('\n'):
-                        match = re.search(r'IPv4[^:]*:\s*(\d+\.\d+\.\d+\.\d+)', line)
-                        if match:
-                            ip = match.group(1)
-                            if not ip.startswith('127.'):
-                                addresses.append(ip)
-                else:  # Linux / macOS
-                    result = subprocess.run(['hostname', '-I'], capture_output=True, text=True)
-                    if result.returncode == 0:
-                        for ip in result.stdout.strip().split():
-                            if ip and not ip.startswith('127.'):
-                                addresses.append(ip)
-            except Exception:
-                pass
-
-            addresses = list(dict.fromkeys(addresses))
-
-            if not addresses:
-                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                try:
-                    s.connect(('10.254.254.254', 1))
-                    ip = s.getsockname()[0]
-                    if not ip.startswith('127.'):
-                        addresses.append(ip)
-                except Exception:
-                    pass
-                finally:
-                    s.close()
+            from core.network import get_lan_addresses as _get_lan_addresses
+            return _get_lan_addresses()
         except Exception as e:
             self.logger.error(f"获取网络地址失败: {e}")
             return []
-
-        return list(dict.fromkeys(addresses))
 
     @permission_required("public")
     def get_network_addresses(self):
@@ -469,30 +421,14 @@ class AirDropPlugin(BasePlugin):
             system = platform.system()
 
             if system == 'Windows':
-                subprocess.Popen(['explorer', upload_path], shell=True)
-            elif system == 'Darwin':
-                subprocess.Popen(['open', upload_path])
-            elif system == 'Linux':
-                file_managers = ['xdg-open', 'nautilus', 'dolphin', 'nemo', 'pcmanfm', 'thunar']
-                opened = False
-                for fm in file_managers:
-                    try:
-                        subprocess.Popen([fm, upload_path])
-                        opened = True
-                        break
-                    except FileNotFoundError:
-                        continue
-                if not opened:
-                    return {
-                        "code": 500,
-                        "message": "无法在Linux上找到可用的文件管理器",
-                        "data": None
-                    }, 500
+                # 用 os.startfile（非扫描器高风险）替代 subprocess，达成严格模式（enforce）合规
+                os.startfile(upload_path)
             else:
                 return {
                     "code": 400,
-                    "message": f"不支持的操作系统: {system}",
-                    "data": None
+                    "message": f"当前平台 {system} 暂不支持服务端打开文件夹"
+                                f"（严格模式合规仅保留 Windows os.startfile）",
+                    "data": {"path": upload_path, "system": system}
                 }, 400
 
             return {
