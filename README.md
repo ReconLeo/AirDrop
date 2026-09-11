@@ -34,6 +34,11 @@
 - 零蜂窝流量：所有数据仅在局域网内传输
 - 移动端操作优化：大按钮、大勾选区域、长按震动反馈
 
+### 主题适配（v1.3.0）
+
+- 深色模式：复用框架 `theme.css` 语义变量（`--bg`/`--card-bg`/`--text`/`--border` 等），跟随系统 `prefers-color-scheme` + 手动切换（`/theme/dark`、`/theme/light`、`/theme/auto`），与框架界面主题一致
+- 三件套接入：`<html data-theme-init="{{ theme_effective }}">` + `theme.css` + `theme.js`（需 FlaskToolkit ≥ v4.19.1）
+
 ### 安全防护
 
 - 文件名安全过滤（防路径穿越）
