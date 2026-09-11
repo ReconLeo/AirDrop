@@ -23,6 +23,13 @@ temp/
 # 遗留本地归档（README.docx 源文档 / 框架签名验证报告，不入库）
 docs/_legacy/
 
+# 插件发布签名私钥（公钥 keys/*_public.pem 提交，私钥绝不入库）
+keys/*private*.pem
+keys/private.pem
+
+# 插件打包构建产物（dist/ 由 tools/build_package.py 从 plugin/ 组装生成）
+dist/
+
 # ---------- 操作系统 / 编辑器 ----------
 .DS_Store
 Thumbs.db

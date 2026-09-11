@@ -83,6 +83,21 @@ python simple-airdrop.py
 
 ### 方式二：FlaskToolkit 插件
 
+**推荐：发布包安装**（含完整性清单 + 可选签名）
+
+1. 从 Release 下载 `airdrop-vX.Y.Z.zip`（或自行用 `python tools/package.py pack package/ -o dist/airdrop.zip --type backend --sign keys/airdrop_signing_private.pem` 打包）。
+2. 在框架根目录离线安装：
+
+```bash
+python tools/install_plugin.py backend airdrop-vX.Y.Z.zip
+```
+
+3. 启动框架，访问 `/plugin/airdrop`。
+
+> 签名验证（可选）：包已用本项目密钥对签名，自架设框架如配置 `PLUGIN_PUBLIC_KEY_PEM` 指向 `keys/airdrop_signing_public.pem`，安装时即真实验签；未配置公钥则仅做完整性校验（sha256），两种场景均可正常安装。
+
+**手动部署**（源码形态）：
+
 1. 准备 [FlaskToolkit](https://github.com/ReconLeo/FlaskToolkit) 框架（v4.x）。
 2. 将 `plugin/` 下的文件按对应路径部署到框架：
    - `plugin/airdrop.py` → `plugins/airdrop.py`
@@ -91,6 +106,8 @@ python simple-airdrop.py
    - `plugin/frontend/index.html` → `templates/plugins/airdrop/index.html`
    - `plugin/frontend/static/` → `templates/plugins/static/airdrop/`
 3. 启动框架，访问 `/plugin/airdrop`。
+
+> 分发源目录 `package/`（`plugin.json` + `airdrop.py` + `templates/` + `static/`）由 `plugin/` 工作源组装，是 `tools/package.py pack` 的输入；`dist/` 为打包构建产物，不入库。
 
 > 双模式鉴权：插件 `configs/airdrop.json` 中 `auth_required=false`（默认）全部接口免登录即开即用；`true` 时按权限矩阵执行（读 public / 上传 user / 删除·打开文件夹 admin），需框架已装 `auth` 插件。
 
