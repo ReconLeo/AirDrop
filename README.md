@@ -39,6 +39,12 @@
 - 深色模式：复用框架 `theme.css` 语义变量（`--bg`/`--card-bg`/`--text`/`--border` 等），跟随系统 `prefers-color-scheme` + 手动切换（`/theme/dark`、`/theme/light`、`/theme/auto`），与框架界面主题一致
 - 三件套接入：`<html data-theme-init="{{ theme_effective }}">` + `theme.css` + `theme.js`（需 FlaskToolkit ≥ v4.19.1）
 
+### Lite 版（v1.0.0-lite）
+
+- 适配 **FlaskToolkit-Lite v4.2.2**（功能子集），与主框架增强版（v1.3.0，需 v4.19.1）双版本并存
+- 降级点：上传用自建 `_save_uploads_sync`（无存储配额）、净化用自建 `_sanitize_filename`、局域网地址 `core.network` 缺失时回退纯 socket 枚举、无主题
+- 安装：Lite 管理后台 → 插件 → 上传 `airdrop-lite-v1.0.0.zip`（`require_framework_version=4.2.2`）
+
 ### 安全防护
 
 - 文件名安全过滤（防路径穿越）
