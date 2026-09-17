@@ -725,45 +725,133 @@
             }
         });
 
-        // 上传功能
-        uploadBtn.addEventListener('click', () => {
+        // ------------------------------------------------------------------
+        // 上传（v1.4.0：小文件整文件上传；大文件分片上传 + 断点续传）
+        // ------------------------------------------------------------------
+        // 分片阈值（MB，由服务端配置注入）：<= 该值的文件整文件上传，> 该值分片上传
+        const CHUNK_SIZE = Math.max(1, {{ chunk_size_mb | default(8) }}) * 1024 * 1024; // bytes
+        // 客户端本地记录分片任务（file_id），中断后重传只补缺失分片（断点续传）
+        const CHUNK_KEY_PREFIX = 'airdrop-chunk-'
+
+        function genId() {
+            // 简易 UUID 生成（crypto.randomUUID 不可用时的回退）
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        function chunkKey(file) {
+            return `${CHUNK_KEY_PREFIX}${file.name}-${file.size}-${file.lastModified || 0}`;
+        }
+
+        // 整文件上传（小文件）：一次 FormData 提交
+        function uploadWhole(file) {
+            const fd = new FormData();
+            fd.append('files', file);
+            return fetch('/api/airdrop/upload', { method: 'POST', body: fd })
+                .then(res => res.json())
+                .then(data => data.status === 'success' || data.status === 'saved')
+                .catch(() => false);
+        }
+
+        // 分片上传（大文件）：断点续传——查已接收分片 → 只补缺失 → 全部到位后合并
+        async function uploadChunked(file, onChunkBytes) {
+            const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+            const key = chunkKey(file);
+            // 复用/新建 file_id：刷新或中断后凭 key 恢复进度
+            let fileId = localStorage.getItem(key);
+            if (!fileId) {
+                fileId = (crypto.randomUUID ? crypto.randomUUID() : genId());
+                localStorage.setItem(key, fileId);
+            }
+            // 断点续传核心：向服务端查询已接收分片，跳过已成功上传的部分
+            let received = [];
+            try {
+                const st = await fetch(`/api/airdrop/upload/status?file_id=${encodeURIComponent(fileId)}`)
+                    .then(r => r.json());
+                if (st.status === 'ok') received = st.received || [];
+            } catch (e) { received = []; }
+            // 顺序上传缺失分片（局域网内串行稳定、不占多连接）
+            for (let i = 0; i < totalChunks; i++) {
+                if (received.includes(i)) {
+                    // 已上传的分片计为已传字节（进度连续）
+                    onChunkBytes(Math.min(CHUNK_SIZE, file.size - i * CHUNK_SIZE));
+                    continue;
+                }
+                const start = i * CHUNK_SIZE;
+                const blob = file.slice(start, Math.min(start + CHUNK_SIZE, file.size));
+                const fd = new FormData();
+                fd.append('file_id', fileId);
+                fd.append('chunk_index', i);
+                fd.append('total_chunks', totalChunks);
+                fd.append('chunk', blob, `chunk-${i}`);
+                let ok = false;
+                try {
+                    const r = await fetch('/api/airdrop/upload/chunk', { method: 'POST', body: fd })
+                        .then(res => res.json());
+                    ok = r.status === 'ok';
+                } catch (e) { ok = false; }
+                if (!ok) {
+                    return false; // 中断：保留 localStorage，供下次续传
+                }
+                onChunkBytes(blob.size);
+            }
+            // 全部分片到位：请求服务端合并落盘
+            const cd = new FormData();
+            cd.append('file_id', fileId);
+            cd.append('filename', file.name);
+            cd.append('total_chunks', totalChunks);
+            try {
+                const r = await fetch('/api/airdrop/upload/complete', { method: 'POST', body: cd })
+                    .then(res => res.json());
+                if (r.status === 'success') {
+                    localStorage.removeItem(key);
+                    return true;
+                }
+                alert(r.msg || '合并失败，请重试');
+                return false;
+            } catch (e) { return false; }
+        }
+
+        // 上传主流程：逐个处理选中文件，小文件整传、大文件分片；累计整体进度
+        uploadBtn.addEventListener('click', async () => {
             if (selectedFiles.length === 0) return;
 
-            const formData = new FormData();
-            selectedFiles.forEach(file => {
-                formData.append('files', file);
-            });
-
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', '/api/airdrop/upload', true);
-
-            // 进度监听
-            xhr.upload.addEventListener('progress', (e) => {
-                if (e.lengthComputable) {
-                    const percent = Math.round((e.loaded / e.total) * 100);
-                    progressBar.style.width = `${percent}%`;
-                    progressText.textContent = `${percent}%`;
-                }
-            });
-
-            // 上传完成
-            xhr.onload = () => {
-                if (xhr.status === 200) {
-                    progressText.textContent = '上传成功，页面即将刷新';
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1000);
-                } else {
-                    progressText.textContent = '上传失败，请重试';
-                }
-            };
-
-            xhr.onerror = () => {
-                progressText.textContent = '上传出错，请检查网络';
-            };
-
+            uploadBtn.disabled = true;
             progressContainer.style.display = 'block';
-            xhr.send(formData);
+
+            const totalBytes = selectedFiles.reduce((s, f) => s + f.size, 0);
+            let uploadedBytes = 0;
+            let failed = false;
+            const updateProgress = () => {
+                const pct = totalBytes ? Math.round(uploadedBytes / totalBytes * 100) : 0;
+                progressBar.style.width = `${pct}%`;
+                progressText.textContent = `${pct}%`;
+            };
+            updateProgress();
+
+            for (const file of selectedFiles) {
+                if (failed) break;
+                if (file.size <= CHUNK_SIZE) {
+                    const ok = await uploadWhole(file);
+                    if (ok) uploadedBytes += file.size;
+                    else failed = true;
+                } else {
+                    const ok = await uploadChunked(file, (b) => { uploadedBytes += b; updateProgress(); });
+                    if (!ok) failed = true;
+                }
+                updateProgress();
+            }
+
+            uploadBtn.disabled = false;
+            if (!failed) {
+                progressText.textContent = '上传成功，页面即将刷新';
+                setTimeout(() => { window.location.reload(); }, 1000);
+            } else {
+                progressText.textContent = '上传中断：已保留进度，可重新点击开始上传以续传';
+            }
         });
 		
 		// 切换范围选择模式（移动端无Shift键专用）
