@@ -82,6 +82,31 @@
             color: #7f8c8d;
             text-align: center;
         }
+        .progress-controls {
+            margin-top: 0.7rem;
+            text-align: center;
+        }
+        .ctrl-btn {
+            background-color: #f39c12;
+            color: white;
+            padding: 0.4rem 1.4rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            margin: 0 0.3rem;
+            transition: background-color 0.3s;
+        }
+        .ctrl-btn:hover { background-color: #e67e22; }
+        .ctrl-cancel { background-color: #e74c3c; }
+        .ctrl-cancel:hover { background-color: #c0392b; }
+        .progress-hint {
+            margin-top: 0.5rem;
+            color: #e74c3c;
+            font-size: 0.85rem;
+            text-align: center;
+            line-height: 1.4;
+        }
         .file-list {
             background-color: white;
             border-radius: 12px;
@@ -533,6 +558,12 @@
     <div class="progress-container" id="progressContainer">
         <div class="progress-bar" id="progressBar"></div>
         <div class="progress-text" id="progressText">0%</div>
+        <div class="progress-controls">
+            <button class="ctrl-btn" id="pauseBtn" style="display:none">暂停</button>
+            <button class="ctrl-btn" id="resumeBtn" style="display:none">继续</button>
+            <button class="ctrl-btn ctrl-cancel" id="cancelBtn" style="display:none">取消</button>
+        </div>
+        <div class="progress-hint" id="progressHint" style="display:none"></div>
     </div>
 
     <div class="file-list">
@@ -625,6 +656,10 @@
         const progressContainer = document.getElementById('progressContainer');
         const progressBar = document.getElementById('progressBar');
         const progressText = document.getElementById('progressText');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const resumeBtn = document.getElementById('resumeBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const progressHint = document.getElementById('progressHint');
         
         let selectedFiles = [];
 		let lastCheckedIndex = null;
@@ -693,46 +728,287 @@
             }
         });
 
-        // 上传功能
+        // ------------------------------------------------------------------
+        // 上传（v1.4.0：小文件整文件上传；大文件分片上传 + 断点续传）
+        // ------------------------------------------------------------------
+        // 分片阈值（MB，由服务端配置注入）：<= 该值的文件整文件上传，> 该值分片上传
+        const CHUNK_SIZE = Math.max(1, {{ chunk_size_mb | default(8) }}) * 1024 * 1024; // bytes
+        // 客户端本地记录分片任务（file_id），中断后重传只补缺失分片（断点续传）
+        const CHUNK_KEY_PREFIX = 'airdrop-chunk-'
+        // 上传状态机 + 卡住检测：20s 无进展判定卡住
+        const STUCK_TIMEOUT = 20000;
+        let uploadState = 'idle';               // idle|running|paused|canceled|done|failed
+        let selectedIndex = 0;                  // 当前处理文件指针
+        let totalBytes = 0;
+        let uploadedBytes = 0;
+        let activeXhr = null;                   // 当前活动 XHR（供暂停/取消中止）
+        let currentFileId = '';
+        let currentChunkKey = '';
+        let lastProgressAt = 0;
+        let stuckTimer = null;
+
+        function genId() {
+            // 简易 UUID 生成（crypto.randomUUID 不可用时的回退）
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        function chunkKey(file) {
+            return `${CHUNK_KEY_PREFIX}${file.name}-${file.size}-${file.lastModified || 0}`;
+        }
+
+        function updateProgress() {
+            const pct = totalBytes ? Math.round(uploadedBytes / totalBytes * 100) : 0;
+            progressBar.style.width = `${pct}%`;
+            progressText.textContent = `${pct}%`;
+        }
+
+        // ---- 卡住检测：每 3s 检查最近进度时间，超时判定卡住 ----
+        function startStuckWatch() {
+            lastProgressAt = Date.now();
+            if (stuckTimer) clearInterval(stuckTimer);
+            stuckTimer = setInterval(() => {
+                if (uploadState !== 'running') return;
+                if (Date.now() - lastProgressAt > STUCK_TIMEOUT) handleStuck();
+            }, 3000);
+        }
+        function stopStuckWatch() {
+            if (stuckTimer) { clearInterval(stuckTimer); stuckTimer = null; }
+        }
+        function handleStuck() {
+            if (uploadState !== 'running') return;
+            uploadState = 'paused';
+            if (activeXhr) { try { activeXhr.abort(); } catch (e) {} activeXhr = null; }
+            stopStuckWatch();
+            showResumeUI();
+            progressHint.style.display = 'block';
+            progressHint.textContent = '上传似乎卡住了（约20秒无进展）。可点击「继续」从断点恢复，或「取消」后重试；若反复卡住，请检查网络连接或确认服务端是否正常运行。';
+        }
+
+        // ---- 暂停 / 继续 / 取消 ----
+        function pauseUpload() {
+            if (uploadState !== 'running') return;
+            uploadState = 'paused';
+            if (activeXhr) { try { activeXhr.abort(); } catch (e) {} activeXhr = null; }
+            stopStuckWatch();
+            showResumeUI();
+            // 状态提示放独立提示区（progressText 始终显示进度，不被覆盖）
+            progressHint.style.display = 'block';
+            progressHint.textContent = '⏸ 已暂停，点「继续」从断点恢复（已传分片会自动续传）';
+        }
+        function resumeUpload() {
+            if (uploadState !== 'paused') return;
+            uploadState = 'running';
+            resumeBtn.style.display = 'none';
+            pauseBtn.style.display = 'inline-block';
+            progressHint.style.display = 'none';
+            startStuckWatch();
+            processNext();
+        }
+        async function cancelUpload() {
+            if (uploadState === 'idle' || uploadState === 'done') return;
+            if (!confirm('确定取消本次上传吗？已传的分片将被清理。')) return;
+            uploadState = 'canceled';
+            if (activeXhr) { try { activeXhr.abort(); } catch (e) {} activeXhr = null; }
+            stopStuckWatch();
+            if (currentFileId) {
+                try {
+                    const fd = new FormData(); fd.append('file_id', currentFileId);
+                    await fetch('/upload/abort', { method: 'POST', body: fd });
+                } catch (e) {}
+            }
+            if (currentChunkKey) localStorage.removeItem(currentChunkKey);
+            resetUploadUI();
+            uploadBtn.disabled = false;
+            uploadArea.querySelector('h3').textContent = '已取消上传，可重新选择文件';
+        }
+
+        function showResumeUI() {
+            pauseBtn.style.display = 'none';
+            resumeBtn.style.display = 'inline-block';
+            cancelBtn.style.display = 'inline-block';
+        }
+        function hideControls() {
+            pauseBtn.style.display = 'none';
+            resumeBtn.style.display = 'none';
+            cancelBtn.style.display = 'none';
+        }
+        function resetUploadUI() {
+            stopStuckWatch();
+            hideControls();
+            progressHint.style.display = 'none';
+            progressContainer.style.display = 'none';
+            progressBar.style.width = '0%';
+            progressText.textContent = '0%';
+            activeXhr = null; currentFileId = ''; currentChunkKey = '';
+            uploadState = 'idle';
+        }
+
+        // 整文件上传（小文件）：一次 FormData 提交，XHR 支持进度/暂停/取消
+        function uploadWhole(file) {
+            return new Promise((resolve) => {
+                const fd = new FormData();
+                fd.append('files', file);
+                const xhr = new XMLHttpRequest();
+                activeXhr = xhr;
+                xhr.open('POST', '/upload', true);
+                xhr.onload = () => {
+                    if (activeXhr === xhr) activeXhr = null;
+                    if (uploadState !== 'running') return resolve({ ok: false, aborted: true });
+                    let ok = false;
+                    try { ok = JSON.parse(xhr.responseText).status === 'success'; } catch (e) { ok = false; }
+                    lastProgressAt = Date.now();
+                    resolve({ ok: ok, aborted: false });
+                };
+                xhr.onerror = () => { if (activeXhr === xhr) activeXhr = null; resolve({ ok: false, aborted: uploadState !== 'running' }); };
+                xhr.onabort = () => { if (activeXhr === xhr) activeXhr = null; resolve({ ok: false, aborted: true }); };
+                xhr.upload.onprogress = (e) => { if (e.lengthComputable) lastProgressAt = Date.now(); };
+                xhr.send(fd);
+            });
+        }
+
+        // 单个分片经 XHR 上传（返回 {ok, aborted}），供暂停/取消中止
+        function uploadChunkViaXhr(fileId, index, total, blob) {
+            return new Promise((resolve) => {
+                const fd = new FormData();
+                fd.append('file_id', fileId);
+                fd.append('chunk_index', index);
+                fd.append('total_chunks', total);
+                fd.append('chunk', blob, `chunk-${index}`);
+                const xhr = new XMLHttpRequest();
+                activeXhr = xhr;
+                xhr.open('POST', '/upload/chunk', true);
+                xhr.onload = () => {
+                    if (activeXhr === xhr) activeXhr = null;
+                    if (uploadState !== 'running') return resolve({ ok: false, aborted: true });
+                    let ok = false;
+                    try { ok = xhr.status === 200 && JSON.parse(xhr.responseText).status === 'ok'; } catch (e) { ok = false; }
+                    lastProgressAt = Date.now();
+                    resolve({ ok: ok, aborted: false });
+                };
+                xhr.onerror = () => { if (activeXhr === xhr) activeXhr = null; resolve({ ok: false, aborted: uploadState !== 'running' }); };
+                xhr.onabort = () => { if (activeXhr === xhr) activeXhr = null; resolve({ ok: false, aborted: true }); };
+                xhr.upload.onprogress = (e) => { if (e.lengthComputable) lastProgressAt = Date.now(); };
+                xhr.send(fd);
+            });
+        }
+
+        // 分片上传（大文件）：断点续传——查已接收分片 → 只补缺失 → 全部到位后合并
+        async function uploadChunked(file, onChunkBytes) {
+            const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+            const key = chunkKey(file);
+            currentChunkKey = key;
+            let fileId = localStorage.getItem(key);
+            if (!fileId) {
+                fileId = (crypto.randomUUID ? crypto.randomUUID() : genId());
+                localStorage.setItem(key, fileId);
+            }
+            currentFileId = fileId;
+            // 断点续传核心：向服务端查询已接收分片，跳过已成功上传的部分
+            let received = [];
+            try {
+                const st = await fetch(`/upload/status?file_id=${encodeURIComponent(fileId)}`)
+                    .then(r => r.json());
+                if (st.status === 'ok') received = st.received || [];
+            } catch (e) { received = []; }
+            // 顺序上传缺失分片（局域网内串行稳定、不占多连接）
+            for (let i = 0; i < totalChunks; i++) {
+                if (uploadState !== 'running') return false; // 暂停/取消
+                if (received.includes(i)) {
+                    onChunkBytes(Math.min(CHUNK_SIZE, file.size - i * CHUNK_SIZE));
+                    continue;
+                }
+                const start = i * CHUNK_SIZE;
+                const blob = file.slice(start, Math.min(start + CHUNK_SIZE, file.size));
+                const r = await uploadChunkViaXhr(fileId, i, totalChunks, blob);
+                if (r.aborted || uploadState !== 'running') return false;
+                if (!r.ok) return false;
+                onChunkBytes(blob.size);
+            }
+            // 全部分片到位：请求服务端合并落盘
+            if (uploadState !== 'running') return false;
+            const cd = new FormData();
+            cd.append('file_id', fileId);
+            cd.append('filename', file.name);
+            cd.append('total_chunks', totalChunks);
+            try {
+                const r = await fetch('/upload/complete', { method: 'POST', body: cd })
+                    .then(res => res.json());
+                if (r.status === 'success') {
+                    localStorage.removeItem(key);
+                    return true;
+                }
+                alert(r.msg || '合并失败，请重试');
+                return false;
+            } catch (e) { return false; }
+        }
+
+        // 主流程：逐个处理选中文件，小文件整传、大文件分片；支持暂停/继续
+        async function processNext() {
+            while (uploadState === 'running' && selectedIndex < selectedFiles.length) {
+                const file = selectedFiles[selectedIndex];
+                let ok;
+                if (file.size <= CHUNK_SIZE) {
+                    const r = await uploadWhole(file);
+                    ok = r.ok;
+                    if (ok) uploadedBytes += file.size;
+                } else {
+                    ok = await uploadChunked(file, (b) => { uploadedBytes += b; updateProgress(); });
+                }
+                updateProgress();
+                if (!ok) {
+                    if (uploadState !== 'running') return; // 暂停/取消由按钮接管
+                    failUpload();
+                    return;
+                }
+                selectedIndex++;
+            }
+            if (uploadState === 'running' && selectedIndex >= selectedFiles.length) {
+                finishUpload();
+            }
+        }
+
+        function failUpload() {
+            uploadState = 'failed';
+            stopStuckWatch();
+            showResumeUI();
+            progressHint.style.display = 'block';
+            progressHint.textContent = '上传失败，可点击「继续」重试（已传分片会自动续传），或「取消」后重新选择文件。';
+        }
+        function finishUpload() {
+            uploadState = 'done';
+            stopStuckWatch();
+            hideControls();
+            progressHint.style.display = 'none';
+            progressText.textContent = '上传成功，页面即将刷新';
+            setTimeout(() => { window.location.reload(); }, 1000);
+        }
+
+        // 开始上传（进入时重置状态）
         uploadBtn.addEventListener('click', () => {
             if (selectedFiles.length === 0) return;
-
-            const formData = new FormData();
-            selectedFiles.forEach(file => {
-                formData.append('files', file);
-            });
-
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', '/upload', true);
-
-            // 进度监听
-            xhr.upload.addEventListener('progress', (e) => {
-                if (e.lengthComputable) {
-                    const percent = Math.round((e.loaded / e.total) * 100);
-                    progressBar.style.width = `${percent}%`;
-                    progressText.textContent = `${percent}%`;
-                }
-            });
-
-            // 上传完成
-            xhr.onload = () => {
-                if (xhr.status === 200) {
-                    progressText.textContent = '上传成功，页面即将刷新';
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1000);
-                } else {
-                    progressText.textContent = '上传失败，请重试';
-                }
-            };
-
-            xhr.onerror = () => {
-                progressText.textContent = '上传出错，请检查网络';
-            };
-
+            uploadState = 'running';
+            uploadBtn.disabled = true;
             progressContainer.style.display = 'block';
-            xhr.send(formData);
+            progressHint.style.display = 'none';
+            pauseBtn.style.display = 'inline-block';
+            cancelBtn.style.display = 'inline-block';
+            resumeBtn.style.display = 'none';
+            totalBytes = selectedFiles.reduce((s, f) => s + f.size, 0);
+            uploadedBytes = 0;
+            selectedIndex = 0;
+            startStuckWatch();
+            updateProgress();
+            processNext();
         });
+
+        // 控制按钮：暂停 / 继续 / 取消
+        pauseBtn.addEventListener('click', pauseUpload);
+        resumeBtn.addEventListener('click', resumeUpload);
+        cancelBtn.addEventListener('click', cancelUpload);
 		
 		// 切换范围选择模式（移动端无Shift键专用）
 		function toggleRangeSelect() {

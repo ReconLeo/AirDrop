@@ -10,6 +10,8 @@
         "expire_seconds": 86400,
         "port": 9000,
         "JSON_AS_ASCII": false,
-        "debuggable": true
+        "debuggable": true,
+        "chunk_size_mb": 8,
+        "chunk_expire_minutes": 30
     }
 }

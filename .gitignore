@@ -30,6 +30,9 @@ keys/private.pem
 # 插件打包构建产物（dist/ 由 tools/build_package.py 从 plugin/ 组装生成）
 dist/
 
+# ---------- Node.js（前端 jsdom 测试等，临时安装不入库） ----------
+node_modules/
+
 # ---------- 操作系统 / 编辑器 ----------
 .DS_Store
 Thumbs.db

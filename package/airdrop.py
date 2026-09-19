@@ -52,7 +52,7 @@ class AirDropPlugin(BasePlugin):
     name = "airdrop"
     title = "AirDrop 局域网文件共享"
     author = "AirDrop"
-    version = "1.4.0"
+    version = "1.5.0"
     category = "文件工具"
     description = ("局域网文件共享：上传/下载/删除/批量操作/过期清理/局域网地址，"
                    "可配置双模式鉴权。大文件支持分片上传与断点续传（下载续传由 HTTP Range 天然支持）。"
